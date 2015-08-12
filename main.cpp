@@ -1,10 +1,7 @@
 #include <iostream>
 #include <vector>
 
-enum ft_op {ADD = 0, SUB, MUL, DIV, MOD};
-
-void			element_wise(int *v, int len, int n, ft_op op);
-int				*element_wise(int *v1, int *v2, int len, ft_op op);
+#include <cudaLinearAlgebra.hpp>
 
 int					main() {
 

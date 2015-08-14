@@ -21,23 +21,43 @@ __global__ void k_dot_product(int *res, int *m1, int *m2, int nrow1, int ncol1, 
 
   if (id < (nrow1 * ncol2 * ncol1)) {
     // product
-    res_row_idx = (id / ncol1) / ncol2;
-    res_col_idx = (id / ncol1) % ncol2;
-    idx_in_cell = (id) % ncol1;
-    res[id] = m1[res_row_idx][idx_in_cell] * m2[idx_in_cell][res_col_idx];
+    int res_row_idx = (id / ncol1) / ncol2;
+    int res_col_idx = (id / ncol1) % ncol2;
+    int idx_in_cell = (id) % ncol1;
+
+    res[id] = m1[res_row_idx * ncol1 + idx_in_cell] * m2[idx_in_cell * ncol2 + res_col_idx];
 
     __syncthreads();
+
     // sum reduce
-    for (int i = 2; i < ncol2; i * 2) {
-      
+    int s = ncol1;
+    for (int i = ncol1 / 2; i > 0; i >>= 1) {
+      if (idx_in_cell < i) {
+        // printf("idx_in_cell : %d -- res[%d] += res[%d + %d] -> %d += %d\n", idx_in_cell, id, id, i, res[id], res[id + i]);
+        res[id] += res[id + i];
+        if (s % 2 == 1 && idx_in_cell == (i - 1))
+          res[id] += res[id + i + 1];
+      }
+      else
+        break ;
+      s = i;
+      __syncthreads();
     }
   }
 }
 
+  // 1  2  3    5  2  10 1      a  c  e  g
+  // 4  5  6    6  12 8  3      b  d  f  h
+  //            9  4  11 6
+
+  // [5][12][27] [2][24][12] [10][16][33] ...
+  // [44]        [38]        [59]         ...
+
 
 int           *dot_product(int *m1, int *m2, int nrow1, int ncol1, int nrow2, int ncol2) {
 
-  int         *h_res = (int *)malloc(sizeof(int) * (nrow1 * ncol2));
+  int         *h_res = (int *)malloc(sizeof(int) * (nrow1 * ncol2) * ncol1);
+  int         *res = (int *)malloc(sizeof(int) * (nrow1 * ncol2));
   int         *d_m1;
   int         **d_m1_ = &d_m1;
   int         *d_m2;
@@ -47,21 +67,24 @@ int           *dot_product(int *m1, int *m2, int nrow1, int ncol1, int nrow2, in
 
   int		blocks = ((nrow1 * ncol2) % NB_THREADS == 0) ? ((nrow1 * ncol2 * ncol1) / NB_THREADS):((nrow1 * ncol2) / NB_THREADS) + 1;
 
-  checkCudaErrors(cudaMalloc(d_m1_, sizeof(int) * len));
-  checkCudaErrors(cudaMalloc(d_m2_, sizeof(int) * len));
-  checkCudaErrors(cudaMalloc(d_res_, sizeof(int) * len));
-  checkCudaErrors(cudaMemcpy(d_m1, v, sizeof(int) * (nrow1 * ncol1), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_m2, v, sizeof(int) * (nrow2 * ncol2), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMalloc(d_m1_, sizeof(int) * (nrow1 * ncol1)));
+  checkCudaErrors(cudaMalloc(d_m2_, sizeof(int) * (nrow2 * ncol2)));
+  checkCudaErrors(cudaMalloc(d_res_, sizeof(int) * (nrow1 * ncol2 * ncol1)));
+  checkCudaErrors(cudaMemcpy(d_m1, m1, sizeof(int) * (nrow1 * ncol1), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(d_m2, m2, sizeof(int) * (nrow2 * ncol2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemset(d_res, 0, sizeof(int) * (nrow1 * ncol2 * ncol1)));
 
   k_dot_product<<<blocks, NB_THREADS>>>(d_res, d_m1, d_m2, nrow1, ncol1, nrow2, ncol2);
 
   cudaDeviceSynchronize();// checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaMemcpy(h_result, d_result, sizeof(int) * len, cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(h_res, d_res, sizeof(int) * (nrow1 * ncol2 * ncol1), cudaMemcpyDeviceToHost));
 
   cudaFree(d_m1_);
   cudaFree(d_m2_);
   cudaFree(d_res_);
 
-  return (h_res);
+  for (int i = 0; i < nrow1 * ncol2; i++) {
+    res[i] = h_res[i * ncol1];
+  }
+  return (res);
 }

@@ -18,4 +18,7 @@ int 			*element_wise(int *v, int len, int n, ft_op op);
 */
 int			  *element_wise(int *v1, int *v2, int len, ft_op op);
 
+
+int           *dot_product(int *m1, int *m2, int nrow1, int ncol1, int nrow2, int ncol2);
+
 #endif
